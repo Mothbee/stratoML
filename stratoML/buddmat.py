@@ -1,6 +1,8 @@
 import numpy as np
 
-
+# 1 fewer dimension than split
+# skip first bc null
+# index is ancestral state, each vector is possible immediate descent states
 buddmat2 = np.array(
 [[0, 0, 0], 
  [1, 0, 0], 

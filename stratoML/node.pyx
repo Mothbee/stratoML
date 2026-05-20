@@ -26,10 +26,14 @@ cdef class Node:
     #cdef public long[:] disc_starts
     cdef public double[:,:] disc_traits
     cdef public double[:,:,:] budd_marginals  # for simulation
+    cdef public double[:,:] budd_marginalsgeo  ### 2 dims bc 1st is index and it only 1 trait
     cdef public double[:,:,:] timeslice_lv
+    cdef public double[:,:] timeslice_lvgeo ### 2 dims bc 1st is index and it only 1 trait
     cdef public double[:,:] scaling_factors # first dim is children, second is traits
+    cdef public double[:] scaling_factorsgeo ### 1 dim for same reason
     cdef public double[:] strat
     cdef public double[:,:,:] pmats
+    cdef public double[:,:,:] pmatsgeo ###
     #cdef public double[:] cont_traits
     cdef public int index, subtree, index_from_parent, parent_lv_index, midpoint_lv_index
 
@@ -48,10 +52,14 @@ cdef class Node:
         self.strat = np.array([0.0,0.0],dtype=np.double)
         self.disc_traits = np.array([[]],dtype=np.double)
         self.scaling_factors = np.array([[]],dtype=np.double)
+        self.scaling_factorsgeo = np.array([],dtype=np.double) ###
         self.budd_marginals = np.array([[[]]],dtype=np.double) # in same order as self.children, these give marginal probs of being in each state at each budding point along branch
+        self.budd_marginalsgeo = np.array([[]],dtype=np.double) ### 2 dims bc 1st is index and it only 1 trait
         self.timeslice_lv = np.array([[[]]],dtype=np.double) # ordered from tip toward root, with budding descendants and midpoint along the way 
+        self.timeslice_lvgeo = np.array([[]],dtype=np.double) ### 2 dims bc 1st is index and it only 1 trait
         #self.cont_traits = np.array([],dtype=np.double)
         self.pmats = np.array([[[]]],dtype=np.double) # these are Pmats from either the start or midpoint of the branch
+        self.pmatsgeo = np.array([[[]]],dtype=np.double) ###
         #self.budd_pmats = np.array([[[]]],dtype=np.double) # these are Pmats from  
         self.index = 0
         self.index_from_parent = 0
@@ -74,22 +82,38 @@ cdef class Node:
             t = self.length / 2.0
         self.pmats = ratemats.calc_p_mats(t, maxstates)
 
+    def update_pmatgeo(self, qmat.Qmat ratemats, int maxstates, str mode="end"):
+        cdef double t
+        cdef unsigned int i
+        #for i in range(len(self.children)):
+
+        if mode != "end" and mode != "mid":
+            print("transition probability matrices must be calculated assuming traits are observed at either the endpoint or midpoint.")
+            print("valid options are \"end\" and \"mid\".")
+            sys.exit()
+
+        if mode == "end" or self.istip == False:
+            t = self.length
+        elif mode == "mid":
+            t = self.length / 2.0
+        self.pmatsgeo = ratemats.calc_p_mats(t, maxstates)
+
 
     def add_disc_traits(self, list traitls, long[:] ss):
         cdef double trait_freq
         cdef int i, cur_trait, j, nstate
         cdef double[:,:] trait_probs = np.zeros((len(traitls),128),dtype=np.double)
-        for i in range(len(traitls)):
-            cur_trait = traitls[i]
+        for i in range(len(traitls)): ### loop over trait indices for the current taxon
+            cur_trait = traitls[i] ### actual trait value
             if cur_trait != -9:
-                trait_probs[i][cur_trait] = 1.0
+                trait_probs[i][cur_trait] = 1.0 ### probability for that character of the observed state is 1.0
             elif cur_trait == -9: # plug in flat priors for missing traits
                 nstate = 2 ** int(ss[i])
                 trait_freq = 1.0 #/ float(nstate)
                 for j in range(len(trait_probs[i])):
                     if j == nstate:
                         break
-                    trait_probs[i][j] = trait_freq
+                    trait_probs[i][j] = trait_freq ### all equally probable
         self.disc_traits = trait_probs
 
 

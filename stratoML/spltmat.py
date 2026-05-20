@@ -1,6 +1,9 @@
 from numpy import array
 
-
+# arrays within array, index for each array is state of ancestor, first one is null state (skip)
+# for each subarray, different possible inheritance scenarios for 2 children given the ancestor's state(s)
+# recall 0 is 1, 1 is 2, 01 is 3
+# each of these has to be the same length so the following 0s are meaningless placekeepers
 spltmat2 = array(
 [array([[0, 0],
        [0, 0],

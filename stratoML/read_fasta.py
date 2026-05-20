@@ -32,7 +32,7 @@ def recode_poly_traits(traits,ss):
     return retraits
 
 def read_fasta(flnm):
-    fl = open(flnm,"r", encoding="utf-8")
+    fl = open(flnm,"r", encoding="utf-8-sig")
     traits = {}
     allstates = {} 
     for line in fl:

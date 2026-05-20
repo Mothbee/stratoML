@@ -7,8 +7,12 @@ cdef class Node:
     cdef public list children
     cdef public double[:,:] disc_traits
     cdef public double[:,:,:] budd_marginals
+    cdef public double[:,:] budd_marginalsgeo
     cdef public double[:,:,:] timeslice_lv 
+    cdef public double[:,:] timeslice_lvgeo
     cdef public double[:,:] scaling_factors # first dim is children, second is traits
+    cdef public double[:] scaling_factorsgeo # first dim is children, second is traits
     cdef public double[:] strat
     cdef public double[:,:,:] pmats
+    cdef public double[:,:,:] pmatsgeo
     cdef public int index, subtree, index_from_parent, parent_lv_index, midpoint_lv_index

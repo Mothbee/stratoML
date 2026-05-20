@@ -8,24 +8,26 @@ from scipy.optimize import basinhopping
 import mfc
 import qmat
 import biparts as bp
+import matplotlib.pyplot as plt
 #import read_fasta, tree_reader
 
 
-def map_tree_disc_traits(tree,traits,ss):
+def map_tree_disc_traits(tree,traits,ss, geo=False):
     ntrait = len(list(traits.values())[0])
-    for n in tree.iternodes(1):
+    for n in tree.iternodes(1): ### loop over taxa
         if n.istip:
             try:
-                curtr = traits[n.label]
-                n.add_disc_traits(curtr,ss)
+                curtr = traits[n.label] ### list of traits for current taxon
+                n.add_disc_traits(curtr,ss) ### morpho and geo still together at this point in disc_traits
             except:
                 print(n.label, "is present in the tree, but has no traits in the fasta")
                 sys.exit()
         else:
             n.disc_traits = np.zeros((ntrait,128))
-    init_budd_marginals(tree,len(list(traits.values())[0]),ss)
+    init_budd_marginals(tree,len(list(traits.values())[0]),ss,geo)
 
-def init_budd_marginals(tree, ntrait, ss):
+''' # THIS IS THE ORIGINAL
+init_budd_marginals(tree, ntrait, ss): ### can i find a way to do traits and geo separately in 1 function?
     one_marg = np.zeros((ntrait,128))
     one_sf   = np.zeros(ntrait)
     for n in tree.iternodes():
@@ -37,6 +39,7 @@ def init_budd_marginals(tree, ntrait, ss):
             if n.istip == False:
                 break
         n.timeslice_lv = np.array(all_lv)
+        print(len(n.timeslice_lv[0]))
         n.scaling_factors = np.array(all_sf)
 
         if n.istip:
@@ -54,9 +57,96 @@ def init_budd_marginals(tree, ntrait, ss):
             #for i in list(n.budd_marginals):
             #    for j in list(i):
             #        print(list(j))
+        '''
+
+def init_budd_marginals(tree, ntrait, ss, geo=False): ### can i find a way to do traits and geo separately in 1 function?
+    if geo == True:
+        ntrait = ntrait-1
+        one_marggeo = np.zeros(128) ### 1 dim
+        one_sfgeo   = 0.0 ### is this how to reduce the dimensions?
+        #print(one_marggeo.shape)
+
+    one_marg = np.zeros((ntrait,128))
+    one_sf   = np.zeros(ntrait)
+   # print(one_marg.shape, one_sf.shape)
+
+    #print(list(one_sf)) ### checking dimensions...
+
+    for n in tree.iternodes():
+        all_lv = []
+        all_lvgeo = []
+        all_sf = []
+        all_sfgeo = []
+
+        for i in range(len(n.children)+1): ### +1 which is the midpoint
+            all_lv.append(one_marg) ### list of zero vector, diff length depending on n children + 1
+            all_sf.append(one_sf)
+            if geo == True:
+                all_lvgeo.append(one_marggeo)
+                all_sfgeo.append(one_sfgeo)
+
+            if n.istip == False:
+                break
+        
+       # print(len(all_lvgeo))
+        n.timeslice_lv = np.array(all_lv) # first dim is time but need to access the lists inside each time
+        n.scaling_factors = np.array(all_sf)
+
+        if geo == True:
+            n.timeslice_lvgeo = np.array(all_lvgeo)
+            n.scaling_factorsgeo = np.array(all_sfgeo)
+
+        if n.istip:
+            n_ts = len(n.children)
+            if n_ts < 1:
+                #n.timeslice_lv[0] = n.disc_traits  # set the likelihood vectors for tips to be the trait states
+                continue
+            all_marg = []
+            all_marggeo = []
+            for i in range(n_ts):
+                all_marg.append(one_marg)
+                if geo == True:
+                    all_marggeo.append(one_marggeo)
+            
+            n.budd_marginals = np.array(all_marg)
+            if geo == True:
+                n.budd_marginalsgeo = np.array(all_marggeo)
+            
+
+
+            #print("HERE",len(n.budd_marginals),n_ts,len(n.budd_marginals[0]))
+            #for i in list(n.budd_marginals):
+            #    for j in list(i):
+            #        print(list(j))
     #fix_obs_lv(tree)
 #def get_all_reattachment_nodes(tree,pluck_node):
 #    for n in tree.iternodes(order=0):
+
+'''REMOVE?? '''
+def init_budd_marginalsgeo(tree, ss): # remove dim 1 (ntrait) bc only one char (no need for index)
+    one_marg = np.zeros(128)
+    one_sf   = np.zeros(1)
+    for n in tree.iternodes():
+        all_lv = []
+        all_sf = []
+        for i in range(len(n.children)+1):
+            all_lv.append(one_marg)
+            all_sf.append(one_sf)
+            if n.istip == False:
+                break
+        n.timeslice_lvgeo = np.array(all_lv)
+        n.scaling_factorsgeo = np.array(all_sf)
+
+        if n.istip:
+            n_ts = len(n.children)
+            if n_ts < 1:
+                #n.timeslice_lv[0] = n.disc_traits  # set the likelihood vectors for tips to be the trait states
+                continue
+            all_marg = []
+            for i in range(n_ts):
+                all_marg.append(one_marg)
+            
+            n.budd_marginalsgeo = np.array(all_marg)
 
        
 
@@ -276,7 +366,7 @@ def get_possible_ancestors(pluck_node,tree):
     nodes = [nn for nn in tree.iternodes() if nn != pluck_node and nn != pluck_node.parent and nn.istip and nn.strat[0] >= pluck_node.strat[0] and nn.subtree == pluck_node.subtree] #and nn != pluck_node.get_sib()] 
     return nodes
 
-def find_new_ancestor2(tree,qmats,ss,startaic=None,tree_mod="bds"):
+def find_new_ancestor2(tree,qmats,ss,startaic=None,tree_mod="bds", geo=False): ### MORPHO, adding geo below
     print("BEFORE:",tree.get_newick_repr())
     descnodes = find_all_possible_descendant_nodes(tree)
     if startaic == None:
@@ -298,7 +388,7 @@ def find_new_ancestor2(tree,qmats,ss,startaic=None,tree_mod="bds"):
         else:
             regraft_AD_subtree(pluck_node,prev_par)
         sort_children_by_age(tree)
-        init_budd_marginals(tree, len(ss), ss)
+        init_budd_marginals(tree, len(ss), ss, geo)
         return False,bestaic
 
     aics = []
@@ -306,7 +396,7 @@ def find_new_ancestor2(tree,qmats,ss,startaic=None,tree_mod="bds"):
     for regraft_node in nodes:
         regraft_AD_subtree(pluck_node,regraft_node)
         sort_children_by_age(tree)
-        init_budd_marginals(tree, len(ss), ss)
+        init_budd_marginals(tree, len(ss), ss, geo)
         fix_obs_lv(tree) 
         print("AFTER:",tree.get_newick_repr())
         curaic,morphll,stratll = calc_tree_ll2(tree,qmats,ss,tree_mod)
@@ -320,7 +410,7 @@ def find_new_ancestor2(tree,qmats,ss,startaic=None,tree_mod="bds"):
     if bestrearr[0] < bestaic:
         regraft_AD_subtree(pluck_node,bestrearr[1])
         sort_children_by_age(tree)
-        init_budd_marginals(tree, len(ss), ss)
+        init_budd_marginals(tree, len(ss), ss, geo)
         bestaic = bestrearr[0]
         changed = True
 
@@ -331,7 +421,69 @@ def find_new_ancestor2(tree,qmats,ss,startaic=None,tree_mod="bds"):
         else:
             regraft_AD_subtree(pluck_node,prev_par)
         sort_children_by_age(tree)
-        init_budd_marginals(tree, len(ss), ss)
+        init_budd_marginals(tree, len(ss), ss, geo)
+        bestaic = bestrearr[0]
+    return changed,bestaic
+
+def find_new_ancestor2geo(tree,qmats,qmatsgeo,ss,startaic=None,tree_mod="bds",geo=True): ### duplicated for geo
+    print("BEFORE:",tree.get_newick_repr())
+    descnodes = find_all_possible_descendant_nodes(tree)
+    if startaic == None:
+        print("here third")
+        startaic,_,_,_ = calc_tree_ll2geo(tree, qmats, qmatsgeo, ss,tree_mod) ### presumably this needs 3 underscores
+
+    bestaic = startaic
+    pluck_node = choose_descnode(descnodes)    # random.choice(descnodes)
+    pluck_node.lower = pluck_node.strat[0]
+    prev_par, sib = prune_subtree(pluck_node)
+    if sib:
+        spare_hyp_anc = pluck_node.parent
+    nodes = get_possible_ancestors(pluck_node,tree) #[nn for nn in tree.iternodes() if nn != pluck_node and nn != pluck_node.parent and nn != pluck_node.get_sib() and nn.istip and nn.strat[0] >= pluck_node.strat[0] and nn.subtree == pluck_node.subtree]
+    if len(nodes) == 0:
+        #print("FOUND NO ANCESTORS",pluck_node.label,pluck_node.parent,pluck_node.parent.label,tree)
+        print("FOUND NO ANCESTORS")
+        if sib:
+            pluck_node.parent = spare_hyp_anc
+            regraft_bif_subtree(pluck_node,sib)
+
+        else:
+            regraft_AD_subtree(pluck_node,prev_par)
+        sort_children_by_age(tree)
+        init_budd_marginals(tree, len(ss), ss, geo)
+        return False,bestaic
+
+    aics = []
+    #allseen = []
+    for regraft_node in nodes:
+        regraft_AD_subtree(pluck_node,regraft_node)
+        sort_children_by_age(tree)
+        init_budd_marginals(tree, len(ss), ss, geo)
+        fix_obs_lv(tree,geo) 
+        fix_obs_lvgeo(tree)
+        print("AFTER:",tree.get_newick_repr())
+        curaic,morphll,stratll,geoll = calc_tree_ll2geo(tree,qmats,qmatsgeo,ss,tree_mod)
+        print(curaic,morphll,stratll,geoll)
+        #allseen.append((curaic,tree.get_newick_repr()))
+        prune_subtree(pluck_node)
+        aics.append((curaic,regraft_node))
+    aics = sorted(aics, key = lambda x: x[0])
+    bestrearr = aics[0]
+    changed = False
+    if bestrearr[0] < bestaic:
+        regraft_AD_subtree(pluck_node,bestrearr[1])
+        sort_children_by_age(tree)
+        init_budd_marginals(tree, len(ss), ss, geo)
+        bestaic = bestrearr[0]
+        changed = True
+
+    else:
+        if sib:
+            pluck_node.parent = spare_hyp_anc
+            regraft_bif_subtree(pluck_node,sib)
+        else:
+            regraft_AD_subtree(pluck_node,prev_par)
+        sort_children_by_age(tree)
+        init_budd_marginals(tree, len(ss), ss, geo)
         bestaic = bestrearr[0]
     return changed,bestaic
 
@@ -397,7 +549,9 @@ def random_spr(tree):
     regraft_subtree(pluck_node,regraft_node)
     return pluck_node,prev_par,sib
 
-def calc_tree_ll2(tree,qmats,ss,tree_model="bds",starting_mfc_rates = [0.1,0.0002]):
+
+### normal only morpho, no geo
+def calc_tree_ll2(tree,qmats,ss,tree_model="bds",starting_mfc_rates = [0.1,0.0002]): ###add 2 more starting rates?
     stratlike.calibrate_brlens_strat(tree,0.2)
     #qmats = qmat.Qmat(0.01,0.05)
     sort_children_by_age(tree)
@@ -411,9 +565,12 @@ def calc_tree_ll2(tree,qmats,ss,tree_model="bds",starting_mfc_rates = [0.1,0.000
         r = res.x[2]
         stratlike.bds_dates(p,q,r,tree)
         bdsll = stratlike.bds_loglike(p,q,r,tree)
+        ### some way of doing the below for only chars and then only geo?
+        ### loop on the 2 subsets? with diff starting mfc rates? and diff q matrices
+        ### could generate 2 q matrices from the start, feed in one then other, 
         res_tr = minimize(mfc.evaluate_m_l2,x0=np.array(starting_mfc_rates),args=(tree,qmats,ss),method="L-BFGS-B",bounds=((0.00001,0.2),(0.00001,0.2)))
         traitll = -res_tr.fun
-        tree_ll = traitll + bdsll
+        tree_ll = traitll + bdsll 
         nparam = 3.0 + 2.0
     elif tree_model == "hr97":
         res_st = minimize(stratlike.poisson_neg_ll,x0=np.array([1.0]),args=(tree),method="Nelder-Mead")
@@ -426,6 +583,8 @@ def calc_tree_ll2(tree,qmats,ss,tree_model="bds",starting_mfc_rates = [0.1,0.000
         traitll = -res_tr.fun
         tree_ll = traitll + bdsll
         nparam = 1.0 + 2.0
+
+        print(res_st, res_tr)
     else:
         print("stratigraphic range model not recognized. please type either \"bds\" or \"hr97\"")
         sys.exit()
@@ -434,6 +593,147 @@ def calc_tree_ll2(tree,qmats,ss,tree_model="bds",starting_mfc_rates = [0.1,0.000
     aic = (2. * nparam) - (2. * tree_ll) 
 
     return aic,traitll,bdsll
+
+
+### with morpho AND geo
+def calc_tree_ll2geo(tree,qmats,qmatsgeo,ss,tree_model="bds",starting_mfc_rates = [0.1,0.0002]): ### could do separate starting rates for geo, subset traits in tree and ss/qmat?
+    stratlike.calibrate_brlens_strat(tree,0.2)
+    #qmats = qmat.Qmat(0.01,0.05)
+    sort_children_by_age(tree)
+    init_budd_marginals(tree, len(ss), ss, geo=True) ### modded
+    fix_obs_lv(tree, geo=True) ### modded
+    fix_obs_lvgeo(tree)
+    if tree_model == "bds": ### DO GEO FOR THIS TOO BC IT IS NOT IN YET
+        pqr_start = np.array([0.5,0.5,1.0])
+        res = basinhopping(stratlike.bds_neg_ll,x0=pqr_start,niter=5,minimizer_kwargs={"method":"L-BFGS-B","args":(tree),"bounds":((0.00001,10),(0.00001,10),(0.00001,20))})
+        p = res.x[0]
+        q = res.x[1]
+        r = res.x[2]
+        stratlike.bds_dates(p,q,r,tree)
+        bdsll = stratlike.bds_loglike(p,q,r,tree)
+        ### some way of doing the below for only chars and then only geo?
+        ### loop on the 2 subsets? with diff starting mfc rates? and diff q matrices
+        ### could generate 2 q matrices from the start, feed in one then other, 
+        res_tr = minimize(mfc.evaluate_m_l2,x0=np.array(starting_mfc_rates),args=(tree,qmats,ss),method="L-BFGS-B",bounds=((0.00001,0.2),(0.00001,0.2)))
+        traitll = -res_tr.fun
+        tree_ll = traitll + bdsll # + geoll
+        nparam = 3.0 + 2.0
+    elif tree_model == "hr97":
+        '''
+        res_st = minimize(stratlike.poisson_neg_ll,x0=np.array([1.0]),args=(tree),method="Nelder-Mead")
+        #for n in tree.iternodes():
+        #    print(n.label,n.lower,n.upper)
+        bdsll = -res_st.fun
+        print(res_st)
+
+        res_tr = minimize(mfc.evaluate_m_l2,x0=np.array(starting_mfc_rates),args=(tree,qmats,ss[0:-1]),method="L-BFGS-B",bounds=((0.00001,0.2),(0.00001,0.2)))
+        traitll = -res_tr.fun
+        print(res_tr)
+
+                ### separate starting rates?
+        res_ge = minimize(mfc.evaluate_m_l2geo,x0=np.array(starting_mfc_rates),args=(tree,qmatsgeo,np.array([ss[-1]])),method="L-BFGS-B",bounds=((0.00001,0.2),(0.00001,0.2)))
+        geoll = -res_ge.fun
+        print(res_ge)
+
+        print("traitll:", traitll, " geoll:", geoll, " strat:", bdsll) ### printing to test
+        tree_ll = traitll + bdsll + geoll
+
+        nparam = 1.0 + 2.0 + 2.0 ### added 2 for geo
+        '''
+
+        ### testing w just evaluate
+        #traitll = mfc.evaluate_m_l2(np.array(starting_mfc_rates), tree, qmats, ss[0:-1])
+        #geoll = mfc.evaluate_m_l2geo(np.array(starting_mfc_rates), tree, qmatsgeo,np.array([ss[-1]]))
+
+        ### print("traitll:", traitll, " geoll:", geoll, " strat:", bdsll) ### printing to test
+       # tree_ll = traitll + bdsll + geoll
+
+        ### just testing
+        ### MORPHO
+        ### from previous run i guess, x: [ 2.000e-01  2.000e-01]
+        param1 = 2.000e-01
+        param2 = 2.000e-01
+        X = np.linspace(param1 - (param1 / 0.5), param1 + (param1 / 0.5), 30) ### modify number of intervals
+        Y = np.linspace(param2 - (param2 / 0.5), param2 + (param2 / 0.5), 30)
+        
+        Xgrid, Ygrid = np.meshgrid(X, Y)
+        z = []
+        
+
+        for yi in Y: 
+            y_ll = []
+            for xi in X:
+                #ll = -evaluate_trend([xi,yi], times, pheno) ###
+                traitll = -mfc.evaluate_m_l2(np.array([xi,yi]), tree, qmats, ss[0:-1])
+                print("traitll:", traitll)
+                y_ll.append(traitll)
+                
+            z.append(y_ll)
+        
+        
+        ### GEO
+        ### from previous run i guess, x: [ 1.500e-01  1.050e-04]
+        param1geo = 1.500e-01
+        param2geo = 1.050e-04
+        Xgeo = np.linspace(param1geo - (param1geo / 0.5), param1geo + (param1geo / 0.5), 30) ### modify number of intervals
+        Ygeo = np.linspace(param2geo - (param2geo / 0.5), param2geo + (param2geo / 0.5), 30)
+        
+        Xgridgeo, Ygridgeo = np.meshgrid(Xgeo, Ygeo)
+        zgeo = []
+        
+
+        for yi in Ygeo: 
+            ygeo_ll = []
+            for xi in Xgeo:
+                #ll = -evaluate_trend([xi,yi], times, pheno) ###
+                geoll = -mfc.evaluate_m_l2geo(np.array([xi,yi]), tree, qmatsgeo,np.array([ss[-1]]))
+                print("geoll:", geoll)
+                ygeo_ll.append(geoll)
+                
+            zgeo.append(ygeo_ll)
+        
+
+            
+        ### for trait
+        ### fun from previous: 984.1719392929712
+        fun = 984.1719392929712
+        levels = [-fun - 20,-fun - 10,-fun - 5,-fun - 1, -fun - .1] 
+        fig, ax = plt.subplots()
+        CS = ax.contour(Xgrid,Ygrid,z,levels=levels)
+        ax.clabel(CS, inline=True, fontsize=10)
+        ax.plot(param1,param2,"o",color="black")
+        plt.xlabel("mutation MLE")
+        plt.ylabel("loss MLE")
+        plt.show()
+
+        ### for geo
+        ### fun from previous: 59.75499878479492
+        fungeo = 59.75499878479492
+        levels = [-fun - 20,-fun - 10,-fun - 5,-fun - 1, -fun - .1] 
+        fig, ax = plt.subplots()
+        CS = ax.contour(Xgridgeo,Ygridgeo,zgeo,levels=levels)
+        ax.clabel(CS, inline=True, fontsize=10)
+        ax.plot(param1geo,param2geo,"o",color="black")
+        plt.xlabel("dispersal MLE")
+        plt.ylabel("extirpation MLE")
+        plt.show()
+        
+            
+        
+        
+
+
+
+    else:
+        print("stratigraphic range model not recognized. please type either \"bds\" or \"hr97\"")
+        sys.exit()
+
+    '''
+    nparam += float(len([n for n in tree.iternodes()]) - 1) ### possibly not needed for hr97
+    aic = (2. * nparam) - (2. * tree_ll) 
+
+    return aic,traitll,bdsll,geoll
+    '''
 
 
 
@@ -521,8 +821,8 @@ def search_bifurcating(tree,ss,startaic = None,tree_mod="bds"):
                 break
     return changed, bestaic
 
-def tree_search3(tree,ss,qmats,tree_mod="bds",anc_start=False):
-    bestaic,_,_ = calc_tree_ll2(tree,qmats,ss,tree_mod)
+def tree_search3(tree,ss,qmats,tree_mod="bds",anc_start=False): ### the one called in main, must add geo
+    bestaic,_,_ = calc_tree_ll2(tree,qmats,ss,tree_mod) 
     besttree = tree.get_newick_repr()
     tipdic = bp.get_tip_indices(tree)
     curbp = bp.decompose_tree(tree,tipdic)
@@ -530,7 +830,7 @@ def tree_search3(tree,ss,qmats,tree_mod="bds",anc_start=False):
     nums = [0,1,2,3] # 0 = spr; 1 = find_new_ancestor; 2 = search_ancestors; 3 = search_bifurcating
     #weights = [0.4,0.4,0.1,0.1]
     #weights = [0.45,0.45,0.1,0.0]
-    weights = [0.0,1.0,0.0,0.0]
+    weights = [0.0,1.0,0.0,0.0] ### weighted so it only draws 1, i.e. 0 probability of 0, 1 probability of 1, 0 probability of 2, etc.
     #weights = [0.,1.,0.,0.]
     outfl = open("stratoML.outtrees","w")
     outfl.write(str(bestaic)+" "+besttree+"\n")
@@ -550,7 +850,7 @@ def tree_search3(tree,ss,qmats,tree_mod="bds",anc_start=False):
         if move == 0:
             changed, curaic = find_best_spr2(tree,ss,bestaic,tree_mod)
         elif move == 1:
-            changed, curaic = find_new_ancestor2(tree,qmats,ss,bestaic,tree_mod)
+            changed, curaic = find_new_ancestor2(tree,qmats,ss,bestaic,tree_mod) ### ADD GEO
         elif move == 2: 
             changed, curaic = search_ancestors(tree,ss,bestaic,tree_mod)
         elif move == 3:
@@ -572,10 +872,66 @@ def tree_search3(tree,ss,qmats,tree_mod="bds",anc_start=False):
     outfl.close()
     return besttree, bestaic
 
+### a geo-included version
+def tree_search3geo(tree,ss,qmats,qmatsgeo,tree_mod="bds",anc_start=False): ### the one called in main, must add geo
+    #print("here first")
+    bestaic,_,_,_ = calc_tree_ll2geo(tree,qmats,qmatsgeo,ss,tree_mod) ### instead use geo version
+    besttree = tree.get_newick_repr()
+    tipdic = bp.get_tip_indices(tree)
+    curbp = bp.decompose_tree(tree,tipdic)
+    seen = set([curbp])
+    nums = [0,1,2,3] # 0 = spr; 1 = find_new_ancestor; 2 = search_ancestors; 3 = search_bifurcating
+    #weights = [0.4,0.4,0.1,0.1]
+    #weights = [0.45,0.45,0.1,0.0]
+    weights = [0.0,1.0,0.0,0.0] ### weighted so it only draws 1, i.e. 0 probability of 0, 1 probability of 1, 0 probability of 2, etc.
+    #weights = [0.,1.,0.,0.]
+    outfl = open("stratoML.outtrees","w")
+    outfl.write(str(bestaic)+" "+besttree+"\n")
+    lastchange = 0
+    if anc_start == True:
+        changed, curaic = search_ancestors2geo(tree,qmats,qmatsgeo,ss,bestaic,tree_mod) ### modifying this rn
+        print(curaic)
+        print(tree.get_newick_repr())
+        sys.exit()
+    else:
+        changed = False
+        curaic = bestaic
+    for i in range(200):
+        if i-lastchange >=100:
+            break
+        move = random.choices(population=nums,weights=weights,k=1)[0] 
+        if move == 0:
+            print("WRONG MOVE")
+            changed, curaic = find_best_spr2(tree,ss,bestaic,tree_mod) ### not made for geo
+        elif move == 1:
+            changed, curaic = find_new_ancestor2geo(tree,qmats,qmatsgeo,ss,bestaic,tree_mod) ### ADDED GEO, only need for this one
+        elif move == 2: 
+            print("WRONG MOVE")
+            changed, curaic = search_ancestors(tree,ss,bestaic,tree_mod) ### not made for geo
+        elif move == 3:
+            print("WRONG MOVE")
+            changed, curaic = search_bifurcating(tree,ss,bestaic,tree_mod) ### not made for geo
+        else:
+            print("need to specify a valid move")
+            sys.exit()
+        print("ITERATION",i,changed,curaic,move)
+        if curaic < bestaic:
+            bestaic = curaic
+            besttree = tree.get_newick_repr()
+            curbp = bp.decompose_tree(tree,tipdic)
+            lastchange = i
+            print("CURRENT:",bestaic,tree.get_newick_repr())
+            if curbp not in seen:
+                seen.add(curbp)
+                outfl.write(str(bestaic)+" "+besttree+"\n")
+    print("BEST",bestaic,besttree)
+    outfl.close()
+    return besttree, bestaic
+
 def search_ancestors2(tree,qmats,ss,startaic = None,tree_mod="bds"):
     if startaic == None:
         sort_children_by_age(tree)
-        init_budd_marginals(tree, len(ss), ss)
+        init_budd_marginals(tree, len(ss), ss, geo)
         fix_obs_lv(tree)
         startaic,_,_ = calc_tree_ll2(tree,qmats,ss,tree_mod)
 
@@ -606,7 +962,7 @@ def search_ancestors2(tree,qmats,ss,startaic = None,tree_mod="bds"):
         for n in testnodes:
             desc = make_ancestor(n)
             sort_children_by_age(tree)
-            init_budd_marginals(tree, len(ss), ss)
+            init_budd_marginals(tree, len(ss), ss, geo)
             curaic,morph,strat = calc_tree_ll2(tree,qmats,ss,tree_mod)
             print(curaic,morph,strat)
             aics.append((curaic,n))
@@ -618,7 +974,7 @@ def search_ancestors2(tree,qmats,ss,startaic = None,tree_mod="bds"):
             curanc = tup[1]
             make_ancestor(curanc)
             sort_children_by_age(tree)
-            init_budd_marginals(tree, len(ss), ss)
+            init_budd_marginals(tree, len(ss), ss, geo)
             curaic,morph,strat = calc_tree_ll2(tree,qmats,ss,tree_mod)
             if curaic < bestaic:
                 bestaic = curaic
@@ -626,7 +982,71 @@ def search_ancestors2(tree,qmats,ss,startaic = None,tree_mod="bds"):
             else:
                 make_bifurcating(desc,curanc)
                 sort_children_by_age(tree)
-                init_budd_marginals(tree, len(ss), ss)
+                init_budd_marginals(tree, len(ss), ss, geo)
+                break
+        #print(bestaic)
+        #print(tree.get_newick_repr())
+    return changed, bestaic
+
+### with geo
+def search_ancestors2geo(tree,qmats,qmatsgeo,ss,startaic = None,tree_mod="bds", geo=True):
+    if startaic == None:
+        sort_children_by_age(tree)
+        init_budd_marginals(tree, len(ss), ss, geo)
+        fix_obs_lv(tree, geo)
+        fix_obs_lvgeo(tree)
+
+        print("here second")
+        startaic,_,_,_ = calc_tree_ll2geo(tree,qmats,qmatsgeo,ss,tree_mod) ### presumably this needs 3 underscores
+
+    testnodes = []
+    for n in tree.iternodes():
+        if n == tree:
+            continue
+        if n.istip == False:
+            n_real_ch = 0
+            real = None
+            for chi in range(len(n.children)):
+                if n.children[chi].istip:
+                    n_real_ch += 1
+                    real = chi
+            if n_real_ch == 0:
+                continue
+            #elif n_real_ch == 1 and n.children[real].strat[0] < n.children[real^1].lower:
+            elif n_real_ch == 1 and n.children[real].strat[0] < max([nn.strat[0] for nn in n.children[real^1].iternodes()]):
+                #print("HERE")
+                continue
+            testnodes.append(n)
+    #print(testnodes)
+
+    aics = []
+    changed = False
+    bestaic = startaic
+    if len(testnodes) > 0:
+        for n in testnodes:
+            desc = make_ancestor(n)
+            sort_children_by_age(tree)
+            init_budd_marginals(tree, len(ss), ss, geo)
+            curaic,morph,strat,geog = calc_tree_ll2geo(tree,qmats,qmatsgeo,ss,tree_mod)
+            print(curaic,morph,strat,geog)
+            aics.append((curaic,n))
+            make_bifurcating(desc,n)
+
+        aics = sorted(aics, key = lambda x: x[0])
+
+        for tup in aics:
+            curanc = tup[1]
+            make_ancestor(curanc)
+            sort_children_by_age(tree)
+            init_budd_marginals(tree, len(ss), ss, geo)
+            curaic,morph,strat,geog = calc_tree_ll2geo(tree,qmats,qmatsgeo,ss,tree_mod)
+            if curaic < bestaic:
+                bestaic = curaic
+                changed = True
+            else:
+                make_bifurcating(desc,curanc)
+                sort_children_by_age(tree)
+                init_budd_marginals(tree, len(ss), ss, geo)
                 break
         #print(bestaic)
         #print(tree.get_newick_repr())
@@ -841,12 +1261,22 @@ def random_nni(tree):
     #    if le 
     # 
 
-def fix_obs_lv(tree, do_tips = True):
+
+def fix_obs_lv(tree, geo = False, do_tips = True):
     for n in tree.iternodes():
         if len(n.children) == 0 and do_tips == False or n.istip == False:
             continue
         #print(n.label,n.midpoint_lv_index, len(n.children))
-        n.timeslice_lv[n.midpoint_lv_index] = n.disc_traits
+        if geo == True:
+            n.timeslice_lv[n.midpoint_lv_index] = n.disc_traits[0:-1] # map the known traits to the midpoint
+        else:
+            n.timeslice_lv[n.midpoint_lv_index] = n.disc_traits
+
+def fix_obs_lvgeo(tree, do_tips = True):
+    for n in tree.iternodes():
+        if len(n.children) == 0 and do_tips == False or n.istip == False:
+            continue
+        n.timeslice_lvgeo[n.midpoint_lv_index] = n.disc_traits[-1]
 
 def sort_children_by_age(tree):
     for n in tree.iternodes(1):
@@ -959,7 +1389,6 @@ def map_strat_to_tree(tree, flnm):
                 print(n.label," is in the tree but was not found in the stratigraphic range data")
                 sys.exit()
     
-
     stratlike.calibrate_brlens_strat(tree)
 
     sort_children_by_age(tree)

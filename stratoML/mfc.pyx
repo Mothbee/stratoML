@@ -59,38 +59,39 @@ cdef double split_loglike_single_trait_marg(node.Node n, double[:, :] p1, double
     cdef long[:,:,:] cur_scen
     cdef node.Node ch
 
-    cur_scen = sm.get_spltmat(cur_k)
+    cur_scen = sm.get_spltmat(cur_k) # inheritance scenarios for k states
     ch = n.children[0]
-    ch1_tr = ch.timeslice_lv[-1][chari]
+    ch1_tr = ch.timeslice_lv[-1][chari] ### trait likelihoods at that timeslice for that char
 
     ch = n.children[1]
     ch2_tr = ch.timeslice_lv[-1][chari]
   
     count = 0
-    for ti in range(len(cur_scen)):
+    for ti in range(len(cur_scen)): # what the set of ancestor's states are
         if ti == 0:
             continue
         anclike = 0.0
         nscenarios = 0
-        for tj in range(len(cur_scen[ti])):
+        for tj in range(len(cur_scen[ti])): # each inheritance scenario for each possible set of ancestor's states
             spltanc = cur_scen[ti][tj]
             if spltanc[0] == 0: #np.add.reduce(spltanc) == 0:
-                break
+                break # in cases where anc is monomorphic and the other possibilities don't exist
             nscenarios += 1
 
         weight = 1.0 / (float(nscenarios) * float(len(cur_scen)-1))
-        for tj in range(len(cur_scen[ti])):
+        for tj in range(len(cur_scen[ti])): # each inheritance scenario for each possible set of ancestor's states
             spltanc = cur_scen[ti][tj]
             if spltanc[0] == 0: #np.add.reduce(spltanc) == 0:
                 break
             count += 1
-            anc1 = spltanc[0]
+            anc1 = spltanc[0] 
             curp1 = 0.0
-            for traitprob_i in range(len(ch1_tr)):
-                traitprob = ch1_tr[traitprob_i]
+            for traitprob_i in range(len(ch1_tr)): # over all possible trait states at that timeslice 
+                traitprob = ch1_tr[traitprob_i] # probability of each trait state
                 if traitprob == 0.0:
                     continue
-                curp1 += p1[anc1][traitprob_i] * traitprob
+                curp1 += p1[anc1][traitprob_i] * traitprob # cell in taxon 1's p matrix for given combo of anc's and its own char states
+                # summing over all possible child trait inheritances
 
             anc2 = spltanc[1]
             curp2 = 0.0
@@ -99,8 +100,8 @@ cdef double split_loglike_single_trait_marg(node.Node n, double[:, :] p1, double
                 if traitprob == 0.0:
                     continue
                 curp2 += p2[anc2][traitprob_i] * traitprob
-            anclike += (curp1 * curp2) * weight
-        n.timeslice_lv[0][chari][ti] = anclike
+            anclike += (curp1 * curp2) * weight # some of each descendants set of inheritance scenarios and their scenario weights
+        n.timeslice_lv[0][chari][ti] = anclike # assign likelihood of ancestor's possible char states for that char at that time
     if n.parent != None:
         n.scaling_factors[0][chari] = max(n.timeslice_lv[0][chari]) # update scaling factor vector
         try:
@@ -109,6 +110,72 @@ cdef double split_loglike_single_trait_marg(node.Node n, double[:, :] p1, double
             print("ERROR SCALING LIKELIHOOD VECTOR in `mfc.split_loglike_single_trait_marg()`")
             sys.exit()
 
+### for geo
+cdef double split_loglike_single_trait_marggeo(node.Node n, double[:, :] p1geo, double[:, :] p2geo, int cur_k): ### removed chari
+    cdef double traitprob, curp1, curp2, anclike, weight, dt
+    cdef long[:] spltanc 
+    cdef int ti, tj, anc1, anc2, traitprob_i, nscenarios, count
+    cdef double[:] ch1_tr,ch2_tr
+    cdef long[:,:,:] cur_scen
+    cdef node.Node ch
+
+    cur_scen = sm.get_spltmat(cur_k) ### get map of split scenarios for this k
+    ch = n.children[0] ### first child
+    ch1_tr = ch.timeslice_lvgeo[-1] ### from branching point to first event (-1) of child whether it be descendant or midpoint
+    ### for most recent event, only 1 char so no chari index
+
+    ch = n.children[1]
+    ch2_tr = ch.timeslice_lvgeo[-1]
+  
+    count = 0
+    for ti in range(len(cur_scen)): ### looping through anc scenarios
+        if ti == 0: ### skips first one bc the first is the null state
+            continue
+        anclike = 0.0
+        nscenarios = 0
+        for tj in range(len(cur_scen[ti])): ### looping through inheritance scenarios for given anc scenario
+            spltanc = cur_scen[ti][tj]
+            if spltanc[0] == 0: #np.add.reduce(spltanc) == 0:
+                break ### if the first is 0 then we already know it's null and the rest is null so we don't count it
+            nscenarios += 1 ### counting scenarios
+
+        weight = 1.0 / (float(nscenarios) * float(len(cur_scen)-1))
+        for tj in range(len(cur_scen[ti])):
+            spltanc = cur_scen[ti][tj]
+            if spltanc[0] == 0: #np.add.reduce(spltanc) == 0: ### skip if already null scenarios at start
+                break
+            count += 1
+            anc1 = spltanc[0] ### first descendent
+            curp1 = 0.0
+            for traitprob_i in range(len(ch1_tr)): ### looping over diff geo state probs at last event
+                traitprob = ch1_tr[traitprob_i] ### prob for that state
+                if traitprob == 0.0:
+                    continue 
+                curp1 += p1geo[anc1][traitprob_i] * traitprob ### from pmatrix for that combo of anc state and desc state * prob of child state (?)
+                ### would skip traitprob_i 0 bc null, anc1 and traitprob_i are any into from 1 to max n of state combos
+
+            anc2 = spltanc[1] ### second descendent
+            curp2 = 0.0
+            for traitprob_i in range(len(ch2_tr)):
+                traitprob = ch2_tr[traitprob_i]
+                if traitprob == 0.0:
+                    continue
+                curp2 += p2geo[anc2][traitprob_i] * traitprob 
+            anclike += (curp1 * curp2) * weight ### likelihood of ancestor was 0, add prob of desc1 * desc2 * weight of this scenario
+        n.timeslice_lvgeo[0][ti] = anclike ### anc likelihood at latest event of parent (this node) for this anc scenario
+    if n.parent != None:
+        #print(len(n.scaling_factorsgeo), "geo") ### for each node is 1 number
+        n.scaling_factorsgeo[0] = max(n.timeslice_lvgeo[0]) # update scaling factor (just 1)
+        #print("geo", n.scaling_factorsgeo[0]) ####
+
+        try:
+            n.timeslice_lvgeo[0] = max_scale_timeslice(n.timeslice_lvgeo[0])
+        except:
+            print("ERROR SCALING LIKELIHOOD VECTOR in `mfc.split_loglike_single_trait_marg()`")
+            sys.exit()
+
+
+### original, for morpho
 cdef double split_like_marg(node.Node n, qmat.Qmat qmats, long[:] ss):
     cdef double nodelike, charll, dt
     cdef int chari, cur_k #, ti, tj, anc1, anc2, traitprob_i, nscenarios
@@ -125,14 +192,41 @@ cdef double split_like_marg(node.Node n, qmat.Qmat qmats, long[:] ss):
     dt = get_child_dt(n.children[1])
     pmats2 = qmats.calc_p_mats(dt)
 
-    for chari in range(0,len(ss)):
-        cur_k = ss[chari]
+    for chari in range(0,len(ss)): # over all characters
+        cur_k = ss[chari] # nstates for this char
         if cur_k == 1:
             continue
 
-        p1 = pmats1[cur_k - 2]
+        p1 = pmats1[cur_k - 2] # row in pmat that has data for this char's nstates
         p2 = pmats2[cur_k - 2]
-        split_loglike_single_trait_marg(n, p1, p2, cur_k, chari)
+        split_loglike_single_trait_marg(n, p1, p2, cur_k, chari) # likelihood for each character
+    # likelihoods for all budding scenarios
+
+
+### for geo
+cdef double split_like_marggeo(node.Node n, qmat.Qmat qmatsgeo, long[:] ssgeo): 
+    cdef double nodelike, charll, dt
+    cdef int cur_k #, ti, tj, anc1, anc2, traitprob_i, nscenarios ### removed chari
+    cdef node.Node ch
+    cdef double[:, :, :] pmats0geo, pmats1geo
+    cdef double[:, :] p0geo, p1geo
+
+    if len(n.children) != 2:
+        print("hypothetical ancestors can only have two children in the model.")
+        sys.exit() 
+
+    dt = get_child_dt(n.children[0])
+    pmats1geo = qmatsgeo.calc_p_mats(dt)
+    dt = get_child_dt(n.children[1])
+    pmats2geo = qmatsgeo.calc_p_mats(dt)
+
+    cur_k = ssgeo[0] ### nstates for the geo char
+    p1geo = pmats1geo[cur_k - 2] # row in pmat1 that has data for this char's nstates
+    p2geo = pmats2geo[cur_k - 2]
+
+    split_loglike_single_trait_marggeo(n, p1geo, p2geo, cur_k) # likelihood for each character
+    # likelihoods for all budding scenarios
+
 
 def max_scale_lv(node.Node n):
     cdef int i, j, k
@@ -346,17 +440,30 @@ cdef budd_like_marg(node.Node n, qmat.Qmat qmats, long[:] ss):
         budd_loglike_single_trait_marg(n, qmats, cur_k, chari)#, desc_weight)
         
 """
+
+### for morpho
 def calc_midpoint_ll(node.Node n, double[:, :, :] pmats, long[:] ss):
     cdef int cur_k
     cdef double [:, :] pmat
 
-    for chari in range(0,len(n.timeslice_lv[0])):
+    for chari in range(0,len(n.timeslice_lv[0])): ###  i think timeslice_lv already 1 char shorter if geo=True BUT CHECK
         cur_k = ss[chari]
         if cur_k == 1:
             continue
         pmat = pmats[cur_k - 2] 
-        calc_midpoint_ll_single_trait(n, pmat, cur_k, chari)
+        calc_midpoint_ll_single_trait(n, pmat, cur_k, chari) ### chari - 1 if geo == True
 
+### for geo
+def calc_midpoint_llgeo(node.Node n, double[:, :, :] pmatsgeo, long[:] ssgeo):
+    cdef int cur_k
+    cdef double [:, :] pmat
+
+    cur_k = ssgeo[0] ### only 1 char
+ 
+    pmatgeo = pmatsgeo[cur_k - 2] 
+    calc_midpoint_ll_single_traitgeo(n, pmatgeo, cur_k, -1) ### chari is -1
+
+### for morpho
 def calc_midpoint_ll_single_trait(node.Node n, double[:, :] pmat, int cur_k, int chari):
     #cdef double[:,:] pmat
     cdef double[:] last_like#, all_marg
@@ -383,6 +490,35 @@ def calc_midpoint_ll_single_trait(node.Node n, double[:, :] pmat, int cur_k, int
     n.scaling_factors[n.midpoint_lv_index][chari] = max(n.timeslice_lv[n.midpoint_lv_index][chari]) # update scaling factor vector
     n.timeslice_lv[n.midpoint_lv_index][chari] = max_scale_timeslice(n.timeslice_lv[n.midpoint_lv_index][chari])
 
+### for geo, chari just the last one
+def calc_midpoint_ll_single_traitgeo(node.Node n, double[:, :] pmatgeo, int cur_k, int chari):
+    #cdef double[:,:] pmat
+    cdef double[:] last_like#, all_marg
+    cdef int i, j #, chari, curk
+    cdef double tr_prob, last_like_val, cond_prob, marg_prob 
+    if n.midpoint_lv_index == 0:
+        last_like = missing_trait_vec(cur_k)
+    else:
+        last_like = n.timeslice_lvgeo[n.midpoint_lv_index-1] ### removed chari, list of likelihoods for chari at this timeslice
+
+    for i in range(len(n.disc_traits[chari])): ### loop over states for this char
+        tr_prob = n.disc_traits[chari][i] ### prob of this state for this char
+        if tr_prob == 0.0:
+            continue
+        marg_prob = 0.0
+        for j in range(len(last_like)): ### looping over states
+            last_like_val = last_like[j] ### value of likelihood for this state
+            if last_like_val == 0.0:
+                continue
+            cond_prob = pmatgeo[i][j] 
+            cond_prob *= last_like_val
+            marg_prob += cond_prob
+        n.timeslice_lvgeo[n.midpoint_lv_index][i] = marg_prob ### removed chari
+    n.scaling_factorsgeo[n.midpoint_lv_index] = max(n.timeslice_lvgeo[n.midpoint_lv_index]) # update scaling factor vector ### removed chari
+    n.timeslice_lvgeo[n.midpoint_lv_index] = max_scale_timeslice(n.timeslice_lvgeo[n.midpoint_lv_index]) ### removed chari
+
+
+### normal for morpho
 cdef budd_loglike_single_trait_marg(node.Node n, node.Node ch, double[:,:] p1, double[:,:] p2, int cur_k, int chari): #, double desc_weight):
     cdef double scen_cond_like,scenario_like, ana_cond_like, weight, ana_prob, marg_prob, dt, traitll, stateprob, traitprob, prev_time, allstprob = 0.0
     #cdef double[:,:] p1, p2
@@ -392,17 +528,17 @@ cdef budd_loglike_single_trait_marg(node.Node n, node.Node ch, double[:,:] p1, d
     cdef int lv_i, chd_i, i, nscen, j, ancst, startst, k, l, maxstates
     
     if ch.parent_lv_index == 0:
-        ana_tr = missing_trait_vec(cur_k)
+        ana_tr = missing_trait_vec(cur_k) # ana_tr is trait vector for next event along the branch, missing if it's the unknown tip
     else:
-        ana_tr = n.timeslice_lv[ch.parent_lv_index - 1][chari]
-
+        ana_tr = n.timeslice_lv[ch.parent_lv_index - 1][chari] # grabbing for "previous" event, i.e. closer to future
+    
     chd_tr = ch.timeslice_lv[-1][chari] 
     cur_scen = bm.get_buddmat(cur_k)
  
     allstprob = 0.0
-    ancsts = np.array([i for i in range(1,len(cur_scen))])
+    ancsts = np.array([i for i in range(1,len(cur_scen))]) # skips over the null by starting at 1, list of all possible ancestral states
 
-    anc_marg = np.zeros(len(ancsts)+1)
+    anc_marg = np.zeros(len(ancsts)+1) # put null back in as index 0
     for ancst in ancsts:
         inher = cur_scen[ancst]
         nscen = count_nscenarios(inher)
@@ -442,10 +578,74 @@ cdef budd_loglike_single_trait_marg(node.Node n, node.Node ch, double[:,:] p1, d
         sys.exit()
 
     for j in range(len(anc_marg)):
-        n.timeslice_lv[ch.parent_lv_index][chari][j] = anc_marg[j] 
+        n.timeslice_lv[ch.parent_lv_index][chari][j] = anc_marg[j]
+
+cdef budd_loglike_single_trait_marggeo(node.Node n, node.Node ch, double[:,:] p1, double[:,:] p2, int cur_k): #, double desc_weight): ### removed chari
+    cdef double scen_cond_like,scenario_like, ana_cond_like, weight, ana_prob, marg_prob, dt, traitll, stateprob, traitprob, prev_time, allstprob = 0.0
+    #cdef double[:,:] p1, p2
+    cdef double[:] chd_tr, par_tr, ana_tr, anc_marg, miss_tr
+    cdef long[:,:] cur_scen
+    cdef long[:] inher, ancsts
+    cdef int lv_i, chd_i, i, nscen, j, ancst, startst, k, l, maxstates
+    
+    if ch.parent_lv_index == 0:
+        ana_tr = missing_trait_vec(cur_k)
+    else:
+        ana_tr = n.timeslice_lvgeo[ch.parent_lv_index - 1]
+    
+    
+    chd_tr = ch.timeslice_lvgeo[-1] 
+    cur_scen = bm.get_buddmat(cur_k)
+ 
+    allstprob = 0.0
+    ancsts = np.array([i for i in range(1,len(cur_scen))])
+
+    anc_marg = np.zeros(len(ancsts)+1)
+    for ancst in ancsts:
+        inher = cur_scen[ancst]
+        nscen = count_nscenarios(inher)
+        weight = 1.0 / ( float(nscen) * float(len(cur_scen)-1) )
+        marg_prob = 0.0
+        ana_cond_like = 0.0
+        for l in range(len(ana_tr)):
+            ana_prob = ana_tr[l]
+            if ana_prob == 0.0:
+                continue
+            ana_cond_like += p2[ancst][l] * ana_prob
+
+        for j in range(len(inher)): # calc cond like for each allowed inheritance scen
+            startst = inher[j]
+            if startst == 0:
+                break
+
+            scen_cond_like = 0.0
+            for k in range(len(chd_tr)):
+                traitprob = chd_tr[k]
+                if k == int(2) ** cur_k: # NEED TO FIX
+                    break
+                if traitprob == 0.0:
+                    continue
+                scen_cond_like += p1[startst][k] * traitprob
+            scenario_like = ana_cond_like * scen_cond_like 
+            
+            scenario_like *= weight
+            marg_prob += scenario_like
+        anc_marg[ancst] = marg_prob 
+    n.scaling_factorsgeo[ch.parent_lv_index] = max(anc_marg) # update scaling factor vector
+    #print(n.scaling_factors[ch.parent_lv_index].shape) ### there are x events, for the one that is the branching, 35 scaling factors, one for each char
+    
+    try:
+        anc_marg = max_scale_timeslice(anc_marg)
+    except:
+        print("ERROR RESCALING LIKELIHOOD VECTOR `budd_loglike_single_trait_marg()")
+        sys.exit()
+
+    #print(len(anc_marg), "geo") ### 2^nstates, likelihoods for each state, for the one geo char
+    for j in range(len(anc_marg)):
+        n.timeslice_lvgeo[ch.parent_lv_index][j] = anc_marg[j] 
 
 
-cdef budd_like_marg(node.Node n, qmat.Qmat qmats, long[:] ss):
+cdef budd_like_marg(node.Node n, qmat.Qmat qmats, long[:] ss, geo=False):
     cdef int chari, cur_k, chd_i #, i ,j,nscen, ancst, k, maxstates
     cdef double prev_time, dt 
     cdef node.Node ch
@@ -454,12 +654,15 @@ cdef budd_like_marg(node.Node n, qmat.Qmat qmats, long[:] ss):
     cdef double[:, :] p1, p2
     #desc_weight = 1.0 / float(len(n.children))
 
+    maxss = len(ss)-1 if geo == True else len(ss)
+
     past_mid = False
     prev_time = n.upper
     
-    if n.midpoint_lv_index == 0:
+    if n.midpoint_lv_index == 0: ### modifying so geo is included down here
+    ######### WAS HERE #########
             dt = n.midpoint - prev_time
-            pmats1 = qmats.calc_p_mats(dt)
+            pmats1 = qmats.calc_p_mats(dt) # calc probability of transitions in p matrix for this elapsed time
             calc_midpoint_ll(n, pmats1, ss) # need to compute the likelihood at the midpoint if we've hit the first child beyond the midpoint
             past_mid = True
             prev_time = n.midpoint
@@ -478,7 +681,7 @@ cdef budd_like_marg(node.Node n, qmat.Qmat qmats, long[:] ss):
         dt = ch.lower - prev_time
         pmats2 = qmats.calc_p_mats(dt)
         
-        for chari in range(0, len(ss)):
+        for chari in range(0, len(ss)): ### max chari - 1 if geo == True
             cur_k = ss[chari]
             if cur_k == 1:
                 continue
@@ -493,6 +696,55 @@ cdef budd_like_marg(node.Node n, qmat.Qmat qmats, long[:] ss):
             dt = n.midpoint - prev_time
             pmats1 = qmats.calc_p_mats(dt)
             calc_midpoint_ll(n, pmats1, ss) # need to compute the likelihood at the midpoint if we've hit the first child beyond the midpoint
+            past_mid = True
+            prev_time = n.midpoint
+
+
+### for geo
+cdef budd_like_marggeo(node.Node n, qmat.Qmat qmatsgeo, long[:] ssgeo):
+    cdef int chari, cur_k, chd_i #, i ,j,nscen, ancst, k, maxstates ### remove chari
+    cdef double prev_time, dt 
+    cdef node.Node ch
+    cdef bint past_mid
+    cdef double[:, :, :] pmats1geo, pmats2geo
+    cdef double[:, :] p1geo, p2geo
+    #desc_weight = 1.0 / float(len(n.children))
+
+    past_mid = False
+    prev_time = n.upper
+    
+    if n.midpoint_lv_index == 0:
+            dt = n.midpoint - prev_time
+            pmats1geo = qmatsgeo.calc_p_mats(dt) # calc probability of transitions in p matrix for this elapsed time
+            calc_midpoint_llgeo(n, pmats1geo, ssgeo) # need to compute the likelihood at the midpoint if we've hit the first child beyond the midpoint
+            past_mid = True
+            prev_time = n.midpoint
+
+    for chd_i in reversed( range( len(n.children) ) ): # start with child farthest from the root
+        ch = n.children[chd_i]
+        
+        ## NEED TO COME BACK AND ADD get_child_dt() after debugging
+        #if len(ch.children) > 0 and ch.midpoint_lv_index != len(ch.children):
+        #    dt = ch.lower - ch.children[0].lower
+        #elif len(ch.children) > 0 and ch.midpoint_lv_index == len(ch.children) or len(ch.children) == 0:
+        #    dt = ch.lower - ch.midpoint
+
+        dt = get_child_dt(ch)
+        pmats1geo = qmatsgeo.calc_p_mats(dt)
+        dt = ch.lower - prev_time
+        pmats2geo = qmatsgeo.calc_p_mats(dt)
+        
+        cur_k = ssgeo[0] # only one char
+        p1geo = pmats1geo[cur_k - 2]
+        p2geo = pmats2geo[cur_k - 2]
+            
+        budd_loglike_single_trait_marggeo(n, ch, p1geo, p2geo, cur_k)#, desc_weight)
+ 
+        prev_time = ch.lower
+        if ch.parent_lv_index == n.midpoint_lv_index - 1:
+            dt = n.midpoint - prev_time
+            pmats1geo = qmatsgeo.calc_p_mats(dt)
+            calc_midpoint_llgeo(n, pmats1geo, ssgeo) # need to compute the likelihood at the midpoint if we've hit the first child beyond the midpoint
             past_mid = True
             prev_time = n.midpoint
 
@@ -603,18 +855,36 @@ def calc_bud_root_ll(node.Node tree, qmat.Qmat qmats, long[:] ss):
     return root_partials
 
 def calc_logsum_scaling_factors(node.Node tree, long[:] ss):
-    sum_log_sf = np.zeros(len(ss)) 
+    sum_log_sf = np.zeros(len(ss)) ### empty list as long as ss is
     for n in tree.iternodes(1):
         if n == tree and n.istip == False: 
             continue
         if len(n.children) == 0:
             continue
-        for i in range(len(n.scaling_factors)):
-            for j in range(1,len(n.scaling_factors[i])):
+        for i in range(len(n.scaling_factors)): ### looping over time slices
+            for j in range(1,len(n.scaling_factors[i])): ### looping over chars
                 if ss[j] > 1:
-                    sum_log_sf[j] += np.log(n.scaling_factors[i][j])
+                       # print(n.label, j, np.log(n.scaling_factors[i][j]), sum_log_sf[j])    
+                    sum_log_sf[j] += np.log(n.scaling_factors[i][j]) ### end up with 1 per char
+                        #print(sum_log_sf[j]) 
     return sum_log_sf
 
+def calc_logsum_scaling_factorsgeo(node.Node tree, long[:] ssgeo):
+    sum_log_sfgeo = np.zeros(len(ssgeo)) ### empty list 1 long
+    for n in tree.iternodes(1):
+        if n == tree and n.istip == False:
+            continue
+        if len(n.children) == 0:
+            continue
+        for i in range(len(n.scaling_factorsgeo)): ### looping over time slices
+            #print(n.label, np.log(n.scaling_factorsgeo[i]), sum_log_sfgeo)
+            sum_log_sfgeo += np.log(n.scaling_factorsgeo[i]) ### now this works
+            #print(sum_log_sfgeo) ### end up with 1, bc 1 char only
+        #print(n.label, list(n.scaling_factorsgeo), sum_log_sfgeo)
+    return sum_log_sfgeo
+
+
+### FOR MORPHO
 def mfc2_treell(node.Node tree, qmat.Qmat qmats, long[:] ss, bint asc = True):
     cdef double treell, asc_treell, plike, flat_prior, invarll, sum_plikes, sublike
     cdef double[:,:] root_marg_likes
@@ -623,7 +893,7 @@ def mfc2_treell(node.Node tree, qmat.Qmat qmats, long[:] ss, bint asc = True):
     cdef node.Node n
 
     treell = 0.0
-    for n in tree.iternodes(1):
+    for n in tree.iternodes(1): ### going through nodes
         if len(n.children) == 0:
             continue
         if n.istip == False:
@@ -631,35 +901,38 @@ def mfc2_treell(node.Node tree, qmat.Qmat qmats, long[:] ss, bint asc = True):
         elif n.istip:
             budd_like_marg(n, qmats, ss)
 
-    if tree.istip == False:
-        root_marg_likes = tree.timeslice_lv[-1]
+    if tree.istip == False: ### tree is the root node
+        root_marg_likes = tree.timeslice_lv[-1] ### earliest event, list of chars each with their list of state likelihoods
     else:
         root_marg_likes = calc_bud_root_ll(tree, qmats, ss)
 
     sum_log_sf = calc_logsum_scaling_factors(tree, ss) 
 
     treell = 0.0
-    for i in range(1, len(root_marg_likes)):
+    for i in range(1, len(root_marg_likes)): ### looping over chars at the root
         #for j in i:
         if ss[i] == 1: # invariant traits do not contribute to the tree likelihood bc we use ascertainment bias correction
             continue
-        plikes = root_marg_likes[i]
-        sum_plikes = sum(plikes)
+        plikes = root_marg_likes[i] ### all state likelihoods for this char
+        sum_plikes = sum(plikes) ### sum all state likelihoods together
         sublike = 0.0
         #print("PLIKES",list(plikes)[0:8])
         count = 0
         
-        for j in range(len(plikes)):
+        for j in range(len(plikes)): ### looping over states for this char
             if j > 0.0:
                 count+=1
         
-        #flat_prior = 1.0 / float(count)
+        #flat_prior = 1.0 / float(count) ### looping over states for this char
         for j in range(len(plikes)):
-            plike = plikes[j]
-            sublike += plike * (plike / sum_plikes) #flat_prior 
+            plike = plikes[j] ### likelihood for this state
+            sublike += plike * (plike / sum_plikes) #flat_prior  ### adding them together, weighted
         #print(i, np.log(sublike), np.log(sublike) + sum_log_sf[i], np.exp(np.log(sublike) + sum_log_sf[i]))
         sublike = np.log(sublike) + sum_log_sf[i]
-        treell += sublike
+        ### EXTRACT LIKELIHOODS PER CHARACTER HERE ###
+        #print(i, sublike)
+
+        treell += sublike ### going character by character for whole tree
     #print("MFC2 TREELL:",treell)
     if asc == True:
         invarll = calc_invar_ll_marg(tree,qmats)
@@ -667,6 +940,112 @@ def mfc2_treell(node.Node tree, qmat.Qmat qmats, long[:] ss, bint asc = True):
     
     #print("CORRECTED MFC2 TREELL:",treell)
     return treell
+
+### FOR GEO
+def mfc2_treellgeo(node.Node tree, qmat.Qmat qmatsgeo, long[:] ssgeo, bint asc = True):
+    cdef double treell, asc_treell, plike, flat_prior, invarll, sum_plikes, sublike
+    cdef double[:] root_marg_likes, plikes, sum_log_sf ### one dimensional root_marg_likes for geo
+    cdef int i, j, k, count
+    cdef node.Node n
+
+    treell = 0.0
+    for n in tree.iternodes(1):
+        if len(n.children) == 0:
+            continue
+        if n.istip == False:
+            split_like_marggeo(n, qmatsgeo, ssgeo) ### done
+        elif n.istip:
+            budd_like_marggeo(n, qmatsgeo, ssgeo)
+
+    if tree.istip == False:
+        root_marg_likes = tree.timeslice_lvgeo[-1] ### list of likelihoods for each state, single char geo, at earliest event
+    else:
+        root_marg_likes = calc_bud_root_ll(tree, qmatsgeo, ssgeo)
+
+    sum_log_sf = calc_logsum_scaling_factorsgeo(tree, ssgeo) 
+
+    plikes = root_marg_likes ### used to be indexed for char
+    sum_plikes = sum(plikes)
+    sublike = 0.0
+    #print("PLIKES",list(plikes)[0:8])
+    count = 0
+    
+    for j in range(len(plikes)): ### looping over states for this char
+        if j > 0.0:
+            count+=1
+    
+    #flat_prior = 1.0 / float(count)
+    for j in range(len(plikes)): ### looping over states for this char
+        plike = plikes[j] ### likelihood for this state
+        sublike += plike * (plike / sum_plikes) #flat_prior ### adding them together, weighted, for this char
+    #print(i, np.log(sublike), np.log(sublike) + sum_log_sf[i], np.exp(np.log(sublike) + sum_log_sf[i]))
+    sublike = np.log(sublike) + sum_log_sf[i]
+    treellgeo = sublike ### there is only one sublike
+    #print("MFC2 TREELL:",treell)
+    if asc == True:
+        invarllgeo = calc_invar_ll_marg(tree,qmatsgeo)
+        treellgeo = treellgeo - np.log(1.0-np.exp(invarllgeo))
+    
+    #print("CORRECTED MFC2 TREELL:",treell)
+    return treellgeo
+
+### FOR MORPHO
+def mfc2_treellperchar(node.Node tree, qmat.Qmat qmats, long[:] ss, bint asc = True):
+    cdef double treell, asc_treell, plike, flat_prior, invarll, sum_plikes, sublike
+    cdef double[:,:] root_marg_likes
+    cdef double[:] plikes, sum_log_sf
+    cdef int i, j, k, count
+    cdef node.Node n
+    treell = 0.0
+    for n in tree.iternodes(1): ### going through nodes
+        if len(n.children) == 0:
+            continue
+        if n.istip == False:
+            split_like_marg(n, qmats, ss)
+        elif n.istip:
+            budd_like_marg(n, qmats, ss)
+
+    if tree.istip == False: ### tree is the root node
+        root_marg_likes = tree.timeslice_lv[-1] ### earliest event, list of chars each with their list of state likelihoods
+    else:
+        root_marg_likes = calc_bud_root_ll(tree, qmats, ss)
+
+    sum_log_sf = calc_logsum_scaling_factors(tree, ss) 
+
+    treell = 0.0
+    sublikes = []
+    for i in range(1, len(root_marg_likes)): ### looping over chars at the root
+        #for j in i:
+        if ss[i] == 1: # invariant traits do not contribute to the tree likelihood bc we use ascertainment bias correction
+            continue
+        plikes = root_marg_likes[i] ### all state likelihoods for this char
+        sum_plikes = sum(plikes) ### sum all state likelihoods together
+        sublike = 0.0
+        #print("PLIKES",list(plikes)[0:8])
+        count = 0
+        
+        for j in range(len(plikes)): ### looping over states for this char
+            if j > 0.0:
+                count+=1
+        
+        #flat_prior = 1.0 / float(count) ### looping over states for this char
+        for j in range(len(plikes)):
+            plike = plikes[j] ### likelihood for this state
+            sublike += plike * (plike / sum_plikes) #flat_prior  ### adding them together, weighted
+        #print(i, np.log(sublike), np.log(sublike) + sum_log_sf[i], np.exp(np.log(sublike) + sum_log_sf[i]))
+        sublike = np.log(sublike) + sum_log_sf[i]
+        ### EXTRACT LIKELIHOODS PER CHARACTER HERE ###
+        sublikes.append(sublike)
+        #print(i, sublike)
+
+        treell += sublike ### going character by character for whole tree
+    #print("MFC2 TREELL:",treell)
+    if asc == True:
+        invarll = calc_invar_ll_marg(tree,qmats)
+        treell = treell - np.log(1.0-np.exp(invarll))
+    
+    #print("CORRECTED MFC2 TREELL:",treell)
+    return treell,sublikes
 
 def calc_ASR_down_budd_node(node.Node n, qmat.Qmat qmats, long[:] ss):#, double[:, :] prev_marg):
     cdef node.Node ch
@@ -1108,6 +1487,8 @@ cdef double calc_invar_ll_marg(node.Node tree, qmat.Qmat qmats):
     sublike = np.log(sublike) + sum_log_sf
     return sublike 
     
+
+### morpho, duplicated this for geo
 def evaluate_m_l2(double[:] params, node.Node tree, qmat.Qmat qmats,long[:] ss):
     cdef node.Node n
     cdef double treell
@@ -1116,7 +1497,8 @@ def evaluate_m_l2(double[:] params, node.Node tree, qmat.Qmat qmats,long[:] ss):
     if params[0] < 0.0001 or params[1] < 0.0001:
         return 10000000000
 
-    qmats.update_all_qmats(params[0],params[1]) 
+    qmats.update_all_qmats(params[0],params[1]) # update with new rates
+    ### could do with morpho rates then geo rates?
 
     #for n in tree.iternodes():
     #    n.update_pmat(qmats, maxstates)
@@ -1127,6 +1509,30 @@ def evaluate_m_l2(double[:] params, node.Node tree, qmat.Qmat qmats,long[:] ss):
     #print("SORTED")
     #sys.exit()
     treell = mfc2_treell(tree, qmats, ss)
+    return -treell
+
+### for geo, ss imported already cut down
+def evaluate_m_l2geo(double[:] params, node.Node tree, qmat.Qmat qmatsgeo,long[:] ssgeo):
+    cdef node.Node n
+    cdef double treell
+    cdef int maxstates = max(ssgeo)
+
+    if params[0] < 0.0001 or params[1] < 0.0001: # first arg is params you are optimizing, in order
+        return 10000000000 # check if above zero, if not above 0, return huge number, neg log likelihood so bad
+        ### duplicate this for params 2 and 3, dispersal and extirpation
+
+    qmatsgeo.update_all_qmats(params[0],params[1])  #
+    ### update for geo as well with params 2 and 3
+
+    #for n in tree.iternodes():
+    #    n.update_pmat(qmats, maxstates)
+
+
+    #print("ABOUT TO SORT")
+    tree_utils.sort_children_by_age(tree)
+    #print("SORTED")
+    #sys.exit()
+    treell = mfc2_treellgeo(tree, qmatsgeo, ssgeo) ### geo
     return -treell
 
 
