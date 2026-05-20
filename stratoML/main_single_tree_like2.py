@@ -67,12 +67,13 @@ if __name__ == "__main__":
             aic,traitll,bdsll = tree_utils.calc_tree_ll2(tree,qmats,ss,"hr97") 
         #   aic,traitll,bdsll = tree_utils.calc_tree_ll2perchar(tree,qmats,ss,"hr97") ### spit out char by char
             
-        ### ADDED TO SPIT OUT SUBLIKES
+        ### UNCOMMENT TO SPIT OUT SUBLIKES
+        '''
             treell,sublikes = mfc.mfc2_treellperchar(tree,qmats,ss) ### corrected MFC treell, char by char likelihoods
             print("AIC: ", aic, "TRAITLL: ", traitll, "STRATLL: ", bdsll)
             sublikes.insert(0, sys.argv[1]) ### name of tree and sublikes
            # print(','.join(str(x) for x in sublikes)) ### add >> <flnm.txt> at end of command to append to csv
-
+        '''
             
 
         t2 = time.time()
@@ -81,16 +82,16 @@ if __name__ == "__main__":
         ###print("TIME OPTIMIZING",t2-t1) 
 
    
-    
-        '''if geo == True: ### COMMENT THESE OUT TO DO 1 ONLY
+        ### UNCOMMENT TO DO TREE SEARCH   
+        if geo == True: 
             tree_utils.tree_search3geo(tree,ss,qmats,qmatsgeo,"hr97",False) ### either 1 function with all or add a separate one for geo 
         else:
-            tree_utils.tree_search3(tree,ss,qmats,"hr97",False)'''
+            tree_utils.tree_search3(tree,ss,qmats,"hr97",False)
     
 
         
 
-
+### this plots the parameter estimates
 """
         res_st = minimize(stratlike.poisson_neg_ll,x0=np.array([1.0]),args=(tree),method="Nelder-Mead")
         bdsll = -res_st.fun
